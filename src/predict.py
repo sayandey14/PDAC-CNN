@@ -2,35 +2,36 @@
 
   CT (DICOM folder or .nii/.nii.gz)
    -> same harmonisation as training (LPS, 1.5 mm, body crop)
-   -> Model 1: segment the pancreas
+   -> Model 1: outline the pancreas and any tumour
    -> cut the pancreas-centred box
-   -> Model 2: probability of pancreatic cancer
+   -> Model 2: probability of a pancreatic tumour + Grad-CAM heatmap
 
-Usage: python src/predict.py <dicom_dir | scan.nii.gz> [--model outputs/classification/pancreas]
+Prints the verdict and saves a figure with the tumour outline (Model 1) and
+where the classifier looked (Model 2).
+
+Usage: python src/predict.py <dicom_dir | scan.nii.gz> [--tag pancreas] [--out fig.png]
 Research code only, not a medical device.
 """
 import argparse
 from pathlib import Path
 
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import numpy as np
 import SimpleITK as sitk
 import torch
 
-from cls_train import THRESHOLD, Net, predict
-from common import HU_MAX, HU_MIN, OUTPUTS, device
-from make_crops import CROP, cut
+from cls_train import THRESHOLD, prepare
+from common import device
+from crops import CROP, box_center, cut
+from gradcam import CENTRE, figure, gradcam, load_classifier
 from prepare_data import harmonise, read_series
-from seg_infer import load_model, segment
+from seg_infer import VOX_ML, load_model, segment
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("scan")
-    ap.add_argument("--model", default=str(OUTPUTS / "classification" / "pancreas"))
-    ap.add_argument("--out", default=None, help="where to save the overlay PNG")
+    ap.add_argument("--tag", default="pancreas", help="classifier run under outputs/classification/")
+    ap.add_argument("--out", default=None, help="where to save the figure")
     args = ap.parse_args()
     dev = device()
 
@@ -39,35 +40,27 @@ def main():
     img, _ = harmonise(img)
     ct = sitk.GetArrayFromImage(img).astype(np.float32)
 
-    mask = segment(load_model(dev), ct, dev)
-    if mask.any():
-        zz, yy, xx = np.where(mask)
-        center = [(v.min() + v.max()) / 2 for v in (zz, yy, xx)]
-    else:
+    organ, tumor = segment(load_model(dev), ct, dev)
+    if not organ.any():
         print("warning: no pancreas found, using the scan centre")
-        center = [s / 2 for s in ct.shape]
+    center = box_center(organ)
+    crops = [cut(a, center, CROP, f) for a, f in [(ct, -1024), (organ.astype(np.float32), 0), (tumor.astype(np.float32), 0)]]
 
-    state = torch.load(Path(args.model) / "model.pt", map_location=dev)
-    n_ch = state["features.0.weight"].shape[1]
-    model = Net(n_ch).to(dev)
-    model.load_state_dict(state)
-    crop = np.stack([cut(ct, center, CROP, -1024), cut(mask.astype(np.float32), center, CROP, 0)])[:n_ch]
-    prob = float(predict(model, torch.from_numpy(crop)[None], n_ch, blur=1.0, dev=dev)[0])
+    model = load_classifier(args.tag, dev)
+    n_ch = model.features[0].in_channels
+    x = torch.from_numpy(np.stack(crops[:2])).float()[None].to(dev)
+    prob, cam = gradcam(model, prepare(x, False, 1.0)[:, :n_ch])
 
-    verdict = "CANCER SUSPECTED" if prob >= THRESHOLD else "no cancer detected"
-    print(f"pancreas volume: {mask.sum() * 1.5 ** 3 / 1000:.1f} ml")
-    print(f"P(cancer) = {prob:.3f}  ->  {verdict}")
+    tumor_ml = tumor.sum() * VOX_ML
+    verdict = "TUMOUR SUSPECTED" if prob >= THRESHOLD else "no tumour detected"
+    print(f"pancreas volume:          {organ.sum() * VOX_ML:.1f} ml")
+    print(f"Model 1 tumour outline:   {tumor_ml:.1f} ml" + ("" if tumor_ml else " (none found)"))
+    print(f"Model 2 P(tumour) = {prob:.3f}  ->  {verdict}")
 
     out = Path(args.out or f"prediction_{p.name.split('.')[0]}.png")
-    z = int(center[0])
-    plt.figure(figsize=(6, 6))
-    plt.imshow(np.clip(ct[z], HU_MIN, HU_MAX), cmap="gray")
-    if mask[z].any():
-        plt.contour(mask[z], [0.5], colors="r", linewidths=1)
-    plt.title(f"P(cancer) = {prob:.2f} — {verdict}")
-    plt.axis("off")
-    plt.savefig(out, dpi=100, bbox_inches="tight")
-    print(f"overlay saved to {out}")
+    c_ct, c_org, c_tum = (a[CENTRE] for a in crops)
+    figure(p.name, int(prob >= THRESHOLD), prob, c_ct, cam, c_org > 0.5, c_tum > 0.5, None, out)
+    print(f"figure saved to {out}")
 
 
 if __name__ == "__main__":

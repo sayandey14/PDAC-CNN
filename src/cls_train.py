@@ -1,7 +1,13 @@
 """Model 2 of 2: cancer vs. healthy classifier, a 3D CNN on pancreas-centred crops.
 
-Input: a fixed 1.5 mm box (96 x 144 x 192 mm) centred on the pancreas that
-Model 1 predicted, 2 channels: CT + predicted pancreas mask.
+Input: a fixed 1.5 mm box (96 x 144 x 192 mm) of CT centred on the pancreas
+that Model 1 predicted. (--with_mask adds Model 1's pancreas mask as a 2nd
+channel. It's off by default because Model 1's masks are near-perfect on its own
+training scans but not on new ones, a train/val mismatch the classifier could
+latch onto.)
+
+Positive class = pancreatic tumour: the 40 Pancreatic-CT-CBCT-SEG cancer
+patients + 281 MSD Task07 tumour scans. Negative = the 80 Pancreas-CT healthy scans.
 
 Uses the shared 85/15 patient split (src/split.py). Every epoch it logs loss and
 accuracy on the training set (no augmentation) and on the validation set, then
@@ -13,18 +19,18 @@ then reported that same score, which inflates it.)
 
 Other changes from legacy myclassifier.py:
   * real 3D network (the old GoogLeNet was 2D with the slices fed in as channels)
-  * pancreas-centred box + mask channel instead of the whole resized scan
+  * pancreas-centred box instead of the whole resized scan
   * GPU augmentation: rotation, scaling, shifts, intensity, noise
-  * class-weighted loss (healthy:cancer = 2:1), AdamW + one-cycle LR, label smoothing
+  * class-weighted loss (balances healthy vs tumour), AdamW + one-cycle LR, label smoothing
   * label convention: 1 = cancer (the old code used 0 = cancer)
 
-Note: healthy *training* scans are localised by a segmentation model that saw
-their labels, so their boxes may be centred slightly better than cancer boxes.
-Random shifts of up to ±12 mm during training wash this out, and validation
-scans of both classes are localised identically (unseen by Model 1).
+Note: Model 1 saw the outlines of the healthy and MSD *training* scans, so
+their boxes may be centred slightly better than on new scans. Random shifts of
+up to ±12 mm during training wash this out, and all validation scans are
+localised by a Model 1 that never saw them.
 
 Outputs: outputs/classification/<tag>/
-Usage: python src/cls_train.py [--region pancreas|control] [--no_mask] [--epochs 150]
+Usage: python src/cls_train.py [--region pancreas|control] [--with_mask] [--epochs 80]
 """
 import argparse
 import json
@@ -37,8 +43,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from common import HU_MAX, HU_MIN, OUTPUTS, ROOT, device, load_cases, seed_all
-from make_crops import CROP
+from common import HU_MAX, HU_MIN, OUTPUTS, device, load_cases, seed_all
+from concurrent.futures import ThreadPoolExecutor
+
+from crops import CROP, crop_case
 from plots import confusion_matrix_plot, learning_curves, prob_histogram, roc_pr_plot, summary_metrics
 from split import get_split
 
@@ -117,10 +125,10 @@ def prepare(batch, train, blur):
 
 
 
-def load_crops(region, ids, mask=True):
-    d = ROOT / "data" / "crops" / region
-    X = torch.from_numpy(np.stack([np.load(d / f"{c}.npy") for c in ids]))
-    return X if mask else X[:, :1]
+def load_crops(region, ids, mask=False):
+    channels = ("ct", "predpancreas") if mask else ("ct",)
+    with ThreadPoolExecutor(4) as ex:
+        return torch.from_numpy(np.stack(list(ex.map(lambda c: crop_case(c, region, channels), ids))))
 
 
 def to_input(xb, n_ch, train, blur, dev):
@@ -144,15 +152,15 @@ def bce(p, y):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--region", default="pancreas")
-    ap.add_argument("--no_mask", action="store_true")
-    ap.add_argument("--epochs", type=int, default=150)
+    ap.add_argument("--with_mask", action="store_true")
+    ap.add_argument("--epochs", type=int, default=80)
     ap.add_argument("--bs", type=int, default=8)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--blur", type=float, default=1.0)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--tag", default=None)
     args = ap.parse_args()
-    tag = args.tag or f"{args.region}{'_nomask' if args.no_mask else ''}"
+    tag = args.tag or f"{args.region}{'_mask' if args.with_mask else ''}"
     out = OUTPUTS / "classification" / tag
     out.mkdir(parents=True, exist_ok=True)
     seed_all(args.seed)
@@ -160,7 +168,7 @@ def main():
 
     split, labels = get_split(), load_cases().set_index("case_id").label
     ids = {s: split[s] for s in ("train", "val")}
-    X = {s: load_crops(args.region, ids[s], not args.no_mask) for s in ids}
+    X = {s: load_crops(args.region, ids[s], args.with_mask) for s in ids}
     y = {s: labels[ids[s]].values.astype(np.float32) for s in ids}
     n_ch = X["train"].shape[1]
     print(f"classifier [{tag}]: train {len(y['train'])} ({int(y['train'].sum())} cancer), "
@@ -201,8 +209,12 @@ def main():
     torch.save(model.state_dict(), out / "model.pt")
     probs = {s: predict(model, X[s], n_ch, args.blur, dev) for s in ("train", "val")}
     results = {}
+    source = load_cases().set_index("case_id").source
     for s in ("train", "val"):
         results[s] = summary_metrics(y[s], probs[s], THRESHOLD)
+        src = source[ids[s]].values
+        results[s]["accuracy_by_source"] = {k: float(((probs[s][src == k] >= THRESHOLD) == y[s][src == k]).mean())
+                                            for k in sorted(set(src))}
         confusion_matrix_plot(results[s], out / f"confusion_{s}.png",
                               f"{s.capitalize()} set (n={len(y[s])}), acc {results[s]['accuracy']:.1%}")
     roc_pr_plot({s: (y[s], probs[s]) for s in ("train", "val")}, out / "roc_pr.png")
@@ -218,6 +230,7 @@ def main():
         r = results[s]
         print(f"{s:>10}  " + "  ".join(f"{v:>9}" for v in [r["TP"], r["FP"], r["FN"], r["TN"]])
               + "  " + "  ".join(f"{v:>9.3f}" for v in [r["accuracy"], r["sensitivity_recall"], r["specificity"], r["auc"]]))
+        print(f"{'':>10}  accuracy by source: {r['accuracy_by_source']}")
 
 
 if __name__ == "__main__":
