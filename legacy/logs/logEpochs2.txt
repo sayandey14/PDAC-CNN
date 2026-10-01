@@ -1,0 +1,26 @@
+0,	 Loss Train: 0.030048107728362083	 Loss Val: 0.007443856913596392
+1,	 Loss Train: 0.005169474985450506	 Loss Val: 0.007141822949051857
+2,	 Loss Train: 0.0035735059063881636	 Loss Val: 0.008940733969211578
+3,	 Loss Train: 0.002992604160681367	 Loss Val: 0.009176949970424175
+4,	 Loss Train: 0.0027422078419476748	 Loss Val: 0.00973632000386715
+5,	 Loss Train: 0.002614567056298256	 Loss Val: 0.010069994255900383
+6,	 Loss Train: 0.0024734269827604294	 Loss Val: 0.010203251615166664
+7,	 Loss Train: 0.002540088025853038	 Loss Val: 0.01111709512770176
+8,	 Loss Train: 0.002313901437446475	 Loss Val: 0.012324308045208454
+9,	 Loss Train: 0.0022701644338667393	 Loss Val: 0.012689546681940556
+10,	 Loss Train: 0.002198703121393919	 Loss Val: 0.011039335280656815
+11,	 Loss Train: 0.0021025349851697683	 Loss Val: 0.012790790759027004
+12,	 Loss Train: 0.0020007812418043613	 Loss Val: 0.012233640067279339
+13,	 Loss Train: 0.001958486158400774	 Loss Val: 0.013584774918854237
+14,	 Loss Train: 0.0018867107573896646	 Loss Val: 0.012180287390947342
+15,	 Loss Train: 0.0018285732949152589	 Loss Val: 0.01298728957772255
+16,	 Loss Train: 0.001959223300218582	 Loss Val: 0.014156877994537354
+17,	 Loss Train: 0.0017297352897003293	 Loss Val: 0.014251261949539185
+18,	 Loss Train: 0.0016035602893680334	 Loss Val: 0.014967458322644234
+19,	 Loss Train: 0.0015582776395604014	 Loss Val: 0.01527553889900446
+
+
+[tensor(0.0300, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0052, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0036, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0030, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0027, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0026, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0025, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0025, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0023, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0023, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0022, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0021, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0020, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0020, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0019, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0018, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0020, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0017, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0016, device='cuda:0', grad_fn=<DivBackward0>), tensor(0.0016, device='cuda:0', grad_fn=<DivBackward0>)] 
+
+
+ [tensor(0.0074, device='cuda:0'), tensor(0.0071, device='cuda:0'), tensor(0.0089, device='cuda:0'), tensor(0.0092, device='cuda:0'), tensor(0.0097, device='cuda:0'), tensor(0.0101, device='cuda:0'), tensor(0.0102, device='cuda:0'), tensor(0.0111, device='cuda:0'), tensor(0.0123, device='cuda:0'), tensor(0.0127, device='cuda:0'), tensor(0.0110, device='cuda:0'), tensor(0.0128, device='cuda:0'), tensor(0.0122, device='cuda:0'), tensor(0.0136, device='cuda:0'), tensor(0.0122, device='cuda:0'), tensor(0.0130, device='cuda:0'), tensor(0.0142, device='cuda:0'), tensor(0.0143, device='cuda:0'), tensor(0.0150, device='cuda:0'), tensor(0.0153, device='cuda:0')] 
